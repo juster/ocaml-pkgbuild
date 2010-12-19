@@ -1,0 +1,7 @@
+*~
+*.cm*
+PKGBUILD*
+*.byte
+*.native
+_build
+*.output
