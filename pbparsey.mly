@@ -11,8 +11,10 @@ let parse_error msg =
 %}
 
 %token <int * string * string> ASSIGN
-%token <string> STR
-%token LPAREN RPAREN LCURLY RCURLY LARROW RARROW
+%token <int * string> STR
+%token LPAREN RPAREN LARROW RARROW
+%token LCURLY
+%token <int> RCURLY 
 %token <string> COMMENT
 %token FOR IN DO DONE
 %token SEMI ENDL EOF
@@ -41,13 +43,14 @@ simple_list1:
 command:
 | simple_command {
   match $1 with
-  | "" -> ()
-  | _  -> let x = Pbexpand.expand_string $1 in
-    Pbcollect.collect 0 (Command ($1, x))
+  | (_,"") -> ()
+  | (n, v) -> let x = Pbexpand.expand_string v in
+    Pbcollect.collect n (Command (v, x))
 }
 | function_def {
-  let x = Pbexpand.expand_string $1 in
-  Pbcollect.collect 0 (Function x)
+  (* Don't expand function names. *)
+  match $1 with (begl, endl, v) ->
+    Pbcollect.collect begl (Function (endl, v))
 }
 | shell_command {}
 
@@ -55,7 +58,11 @@ simple_command:
 | simple_command_element { $1 }
 | simple_command simple_command_element {
   match ($1, $2) with
-    ("", _) -> $2 | (_, "") -> $1 | (_, _) -> $1 ^ " " ^ $2
+    (* Empty strings are assignments, not commands. Ignore them. *)
+    ((n,""), (_,"")) -> (n, "")
+  | ((n,""), (_, s)) -> (n, s)
+  | ((n, s), (_,"")) -> (n, s)
+  | ((n, l), (_, r)) -> (n, l ^ " " ^ r)
 }
 
 simple_command_element:
@@ -66,25 +73,25 @@ simple_command_element:
     let x = Pbexpand.expand_string newval in
     Pbcollect.collect line (Assignment(name, newval, x)) ;
     Pbparams.assign_string name x ;
-    ""
+    (line, "")
 }
 
 function_def:
 | STR LPAREN RPAREN newline_list function_body {
-  $1
+  match $1, $5 with ((bl,v),el) -> (bl, el, v)
 }
 
 newline_list:
 | {} | ENDL newline_list {}
 
 function_body:
-| shell_command { (* TODO: redirection_list *) }
+| shell_command { $1 (* TODO: redirection_list *) }
 
 shell_command:
-| group_command { (* TODO: if_command *) }
+| group_command { $1 (* TODO: if_command *) }
 
 group_command:
-| LCURLY compound_list RCURLY {}
+| LCURLY compound_list RCURLY { $3 }
 
 compound_list:
 | list {} | newline_list list1 {}

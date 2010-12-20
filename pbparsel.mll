@@ -50,40 +50,6 @@ let note_newlines str lexbuf =
 
 let assign_regexp = Str.regexp "\\([a-zA-Z0-9_]+\\)="
 
-(* type token = *)
-(*   | STR of string *)
-(*   | ASSIGN of int * string * string *)
-(*   | LPAREN | RPAREN *)
-(*   | LCURLY | RCURLY *)
-(*   | LARROW | RARROW *)
-(*   | COMMENT of string *)
-(*   | FOR | IN | DO *)
-(*   | DONE *)
-(*   | SEMI *)
-(*   | ENDL *)
-(*   | EOF *)
-
-(* let string_of_token tok = *)
-(*   match tok with *)
-(*     ASSIGN (lineno, name, str) -> *)
-(*       sprintf "ASSIGN (line %d) %s := %s" lineno name str *)
-(*   | STR str -> sprintf "STR %s" str *)
-(*   | COMMENT str -> "COMMENT " ^ str *)
-(*   | FOR -> "FOR" | IN -> "IN" | DO -> "DO" *)
-(*   | DONE -> "DONE" *)
-(*   | LPAREN -> "LPAREN" *)
-(*   | RPAREN -> "RPAREN" *)
-(*   | LARROW -> "LARROW" *)
-(*   | RARROW -> "RARROW" *)
-(*   | LCURLY -> "LCURLY" *)
-(*   | RCURLY -> "RCURLY" *)
-(*   (\* | FUNCDEF (lineno, name, contents) -> *\) *)
-(*   (\*     sprintf "FUNCDEF line:%d name:%s" lineno name *\) *)
-(*   (\* | SPACE -> "SPACE" *\) *)
-(*   | ENDL -> "ENDL" *)
-(*   | SEMI -> "SEMI" *)
-(*   | EOF  -> "EOF" *)
-
 (* Reserved words must be at the beginning of a command. *)
 let reserved_words = [ ("for", FOR); ("done", DONE) ]
 
@@ -98,7 +64,7 @@ let token_push tok =
       (SEMI, _) | (ENDL, _) -> ()
     (* Make matching a wordlist the same as matching a word.
        We will have to catch any problems in the grammar. *)
-    | (STR(_), STR(_)) -> last_tokens.(last) <- tok
+    | (STR(_,_), STR(_,_)) -> last_tokens.(last) <- tok
     | _ ->
         Array.blit last_tokens 1 last_tokens 0 (max_queue_size - 1) ;
         last_tokens.(last) <- tok ;
@@ -117,8 +83,8 @@ let reserved_word_token word =
 (* Similar to the function at 2665 of bash's parse.y *)
 let special_case_token word =
   match (word, last_tokens)  with
-    ("in", [| _; _; _; FOR; STR(_) |]) -> IN
-  | ("do", [| _; FOR; STR(_); IN; STR(_) |]) ->
+    ("in", [| _; _; _; FOR; STR(_,_) |]) -> IN
+  | ("do", [| _; FOR; STR(_,_); IN; STR(_,_) |]) ->
       lex_state := PreCmd ; DO
   | _ -> raise Not_found
 
@@ -147,7 +113,8 @@ let context_token lexbuf word =
       then command_start_token lexbuf word
       else raise Cmd_context
     (* This word is a command/argument reserved words are disabled. *)
-    with Cmd_context -> state_record_word () ; STR(word)
+    with Cmd_context -> state_record_word () ;
+      STR(lex_linenum lexbuf, word)
 }
 
 let word = [ '0'-'9' 'a'-'z' 'A'-'Z' '_' '-' ] +
@@ -165,13 +132,13 @@ rule pkgbuildlex = parse
   state_record_word () ;
   let qc = single_quoted lexbuf in
   let trail = lexword lexbuf    in
-  STR("'" ^ qc ^ "'" ^ trail)
+  STR(lex_linenum lexbuf, "'" ^ qc ^ "'" ^ trail)
 }
 | '"' {
   state_record_word () ;
   let qc = double_quoted lexbuf in
   let trail = lexword lexbuf    in
-  STR("\"" ^ qc ^ "\"" ^ trail)
+  STR(lex_linenum lexbuf, "\"" ^ qc ^ "\"" ^ trail)
 }
 (* When unquoted these usually have special meaning *)
 | ';' { lex_state := PreCmd ; SEMI }
@@ -184,12 +151,15 @@ rule pkgbuildlex = parse
   else
     (* Since function defs follow a string we will be in PostCmd state *)
     match last_tokens with
-      [| _; _; STR(_); LPAREN; RPAREN |] -> LCURLY
-    | _ -> STR("{")
+      [| _; _; STR(_,_); LPAREN; RPAREN |] -> LCURLY
+    | _ -> STR(lex_linenum lexbuf, "{")
   (* TODO: Arithmetic for loops? *)
 }
 (* Should we count open curly brackets? *)
-| '}' { if !lex_state == PreCmd then RCURLY else STR("}") }
+| '}' {
+  if !lex_state == PreCmd then (RCURLY (lex_linenum lexbuf))
+  else STR(lex_linenum lexbuf, "}")
+}
 | '(' {
   incr compound_count ; LPAREN
 }

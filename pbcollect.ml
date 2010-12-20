@@ -1,7 +1,7 @@
 type pbdata =
     Assignment of (string * string * string)
   | Command of (string * string)
-  | Function of (string)
+  | Function of (int * string)
 
 module Pbcollect =
   struct

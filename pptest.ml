@@ -22,7 +22,8 @@ let _ =
         | Command(s,x) ->
             "CMD: " ^ (if s <> x then s ^ " (" ^ x ^ ")" else s)
 
-        | Function(n) -> "FUNCDEF: " ^ n
+        | Function(endl,n) -> sprintf "FUNCDEF: %s (ends at line %d)"
+              n endl
         end
     end (Pbcollect.results ()) ;
       
