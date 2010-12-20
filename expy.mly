@@ -1,8 +1,9 @@
 %{
 
-open Pbcollect
-let retrieve = Pbcollect.param_string
-let assign   = Pbcollect.assign_string
+open Pbparams
+
+let retrieve = Pbparams.param_string
+let assign   = Pbparams.assign_string
 
 %}
 

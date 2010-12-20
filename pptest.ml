@@ -1,11 +1,29 @@
 open Pbparse
+open Pbparams
+open Pbcollect
+
 open Printf
 
 let _ =
   try
-    ignore (Parsing.set_trace true) ;
+(*     ignore (Parsing.set_trace true) ; *)
     pbparse_channel (open_in "PKGBUILD") ;
-    ignore (Parsing.set_trace false) ;
+(*     ignore (Parsing.set_trace false) ; *)
+    List.iter begin fun pair -> match pair with (n,v) ->
+      printf "%s=%s\n" n (string_of_param v)
+    end (Pbparams.list ()) ;
+
+    print_endline "" ;
+
+    List.iter begin fun x -> match x with (line, data) ->
+      printf "line %d: %s\n" line
+        begin match data with
+          Assignment(n,v) -> n ^ " := " ^ v
+        | Command(s) -> "CMD: " ^ s
+        | Function(n) -> "FUNCDEF: " ^ n
+        end
+    end (Pbcollect.results ()) ;
+      
   with ex -> ignore (Parsing.set_trace false) ; raise ex
       
       

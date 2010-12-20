@@ -1,6 +1,8 @@
 %{
 
 open Pbcollect
+open Pbexpand
+open Pbparams
 open Printf
 
 let parse_error msg =
@@ -37,8 +39,16 @@ simple_list1:
 | command { (* TODO: pipeline_command *) }
 
 command:
-| simple_command { Pbcollect.collect 0 (Pbcollect.Command $1) }
-| function_def { Pbcollect.collect 0 (Pbcollect.Function $1) }
+| simple_command {
+  match $1 with
+  | "" -> ()
+  | _  -> let x = Pbexpand.expand_string $1 in
+    Pbcollect.collect 0 (Command x)
+}
+| function_def {
+  let x = Pbexpand.expand_string $1 in
+  Pbcollect.collect 0 (Function x)
+}
 | shell_command {}
 
 simple_command:
@@ -51,15 +61,17 @@ simple_command:
 simple_command_element:
 | STR    { $1 }
 | ASSIGN {
-  (* The lexer only puts ASSIGNs in front... *)
+  (* Remember that the lexer only puts ASSIGNs in front... *)
   match $1 with (line, name, newval) ->
-    Pbcollect.collect line (Pbcollect.Assignment(name, newval)) ;
+    let x = Pbexpand.expand_string newval in
+    Pbcollect.collect line (Assignment(name, x)) ;
+    Pbparams.assign_string name x ;
     ""
 }
 
 function_def:
 | STR LPAREN RPAREN newline_list function_body {
-  printf "*DBG* defining function '%s'\n" $1 ; $1
+  $1
 }
 
 newline_list:
