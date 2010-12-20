@@ -53,7 +53,7 @@ command:
      could be a list of commands (via group_command) *)
    match $1 with
      (_,"") -> [] (* Ignore commands that are only assignments. *)
-   | (n, v) -> let x = Pbexpand.expand_string v in [ (n, Command (v, x)) ]
+   | (n, v) -> let x = Pbexpand.string v in [ (n, Command (v, x)) ]
 }
 | function_def {
   (* Don't expand function names. *)
@@ -79,7 +79,7 @@ simple_command_element:
 | ASSIGN {
   (* Remember that the lexer only puts ASSIGNs in front... *)
   match $1 with (line, name, newval) ->
-    let x = Pbexpand.expand_string newval in
+    let x = Pbexpand.string newval in
     Pbcollect.collect line (Assignment(name, newval, x)) ;
     Pbparams.assign_string name x ;
     (line, "")

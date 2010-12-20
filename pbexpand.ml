@@ -16,7 +16,7 @@ module Pbexpand =
 
     exception Unbalanced_quotes of int
 
-    let expand_string str =
+    let string str =
       let rec rawexpand str =
       pbexp pbexplex (Lexing.from_string str)
 
@@ -51,4 +51,6 @@ module Pbexpand =
           Invalid_argument(_) | Not_found -> raise (Unbalanced_quotes idx)
 
       in expand_from str 0 (String.length str)
+
+    let list strlist = List.map string strlist
   end

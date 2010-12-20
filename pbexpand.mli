@@ -1,10 +1,7 @@
 module Pbexpand :
     sig
-      val expand_string : string -> string
-
-      (* val expand_string : (string -> string) -> *)
-      (*   (string -> string -> unit) -> *)
-      (*     string -> string *)
+      val string : string -> string
+      val list : string list -> string list
 
       exception Unbalanced_quotes of int
     end
