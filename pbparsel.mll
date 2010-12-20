@@ -122,8 +122,9 @@ let word = [ '0'-'9' 'a'-'z' 'A'-'Z' '_' '-' ] +
 (* Try to parse as many special characters as possible using
    ocamllex's rules. *)
 rule pkgbuildlex = parse
-| '#' [ ' ' '\t' ]* ( [^'\n']* as text )
-    { COMMENT(text) }
+| '#' [ ' ' '\t' ]* [^'\n']*
+    { (* TODO: record comments using Pbcollect? *)
+      pkgbuildlex lexbuf }
 | [ ' ' '\t' ] + { pkgbuildlex lexbuf }
 | '\n' { Lexing.new_line lexbuf ; lex_state := PreCmd ; ENDL }
 | '\'' {
