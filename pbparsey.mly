@@ -3,17 +3,22 @@
 open Pbcollect
 open Pbexpand
 open Pbparams
+
+open Lexing
 open Printf
 
-let parse_error msg =
-  print_endline ("Error while parsing PKGBUILD.")
+let parse_error msg = ()
+
+let collect_error () =
+  let pos = Parsing.symbol_start_pos () in
+  Pbcollect.collect pos.pos_lnum SyntaxError
 
 %}
 
 %token <int * string * string> ASSIGN
 %token <int * string> STR
 %token LPAREN RPAREN LARROW RARROW
-%token LCURLY
+%token LCURLY RCURLY
 %token <int> RCURLY 
 %token <string> COMMENT
 %token FOR IN DO DONE
@@ -31,7 +36,7 @@ pbparse:
   List.iter (function (line, cmd) -> Pbcollect.collect line cmd) $1 ; ()
 }
 | ENDL pbparse { () }
-| error ENDL {}
+| error ENDL { collect_error () }
 | EOF { () }
 
 simple_list:
@@ -46,7 +51,8 @@ command:
 | simple_command {
   (* Must create lists of one element to match shell_command which
      could be a list of commands (via group_command) *)
-   match $1 with (_,"") -> []
+   match $1 with
+     (_,"") -> [] (* Ignore commands that are only assignments. *)
    | (n, v) -> let x = Pbexpand.expand_string v in [ (n, Command (v, x)) ]
 }
 | function_def {

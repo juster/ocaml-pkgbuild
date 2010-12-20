@@ -23,6 +23,7 @@ let _ =
             "CMD: " ^ (if s <> x then s ^ " (" ^ x ^ ")" else s)
         | Function(name,cmds) -> sprintf "FUNCTION %s (%d commands)"
               name (List.length cmds)
+        | SyntaxError -> "SYNTAX ERROR!"
         end
     end (Pbcollect.results ()) ;
       
