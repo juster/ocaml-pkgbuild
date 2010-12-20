@@ -1,6 +1,6 @@
 type pbdata =
-    Assignment of (string * string)
-  | Command of (string)
+    Assignment of (string * string * string)
+  | Command of (string * string)
   | Function of (string)
 
 module Pbcollect :

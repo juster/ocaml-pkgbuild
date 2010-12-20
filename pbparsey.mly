@@ -43,7 +43,7 @@ command:
   match $1 with
   | "" -> ()
   | _  -> let x = Pbexpand.expand_string $1 in
-    Pbcollect.collect 0 (Command x)
+    Pbcollect.collect 0 (Command ($1, x))
 }
 | function_def {
   let x = Pbexpand.expand_string $1 in
@@ -64,7 +64,7 @@ simple_command_element:
   (* Remember that the lexer only puts ASSIGNs in front... *)
   match $1 with (line, name, newval) ->
     let x = Pbexpand.expand_string newval in
-    Pbcollect.collect line (Assignment(name, x)) ;
+    Pbcollect.collect line (Assignment(name, newval, x)) ;
     Pbparams.assign_string name x ;
     ""
 }

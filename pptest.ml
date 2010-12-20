@@ -18,8 +18,10 @@ let _ =
     List.iter begin fun x -> match x with (line, data) ->
       printf "line %d: %s\n" line
         begin match data with
-          Assignment(n,v) -> n ^ " := " ^ v
-        | Command(s) -> "CMD: " ^ s
+          Assignment(n,v,x) -> n ^ " := " ^ v ^ " (" ^ x ^ ")"
+        | Command(s,x) ->
+            "CMD: " ^ (if s <> x then s ^ " (" ^ x ^ ")" else s)
+
         | Function(n) -> "FUNCDEF: " ^ n
         end
     end (Pbcollect.results ()) ;
