@@ -1,5 +1,5 @@
 type pbdata =
-    Assignment of (string * string * string)
+    Assignment of (string * string list * string list)
   | Command of (string * string)
   | Function of (string * (int * pbdata) list)
   | SyntaxError

@@ -7,27 +7,20 @@
 open Pbparsey
 open Lexing
 open Printf
-open Str
 
 (* We are in a wordlist when using constructs like "for" or "while" *)
-type lexing_state = PreCmd | PostCmd | WordList
+type lexing_state = PreCommand | AssignVal | CompoundVal | Command
 
 let string_of_lexstate = function
-  | PreCmd     -> "PreCmd"
-  | PostCmd    -> "PostCmd"
-  | WordList   -> "WordList"
+  | PreCommand  -> "PreCommand"
+  | AssignVal   -> "AssignVal"
+  | CompoundVal -> "CompoundVal"
+  | Command     -> "Command"
 
 let quote_start      = ref 0
 let func_quote_count = ref 0
-let lex_state        = ref PreCmd
-let compound_count   = ref 0
-
-(* When we match a string literal token, call this *)
-let state_record_word unit =
-  match !lex_state with
-    PreCmd   -> lex_state := PostCmd ; ()
-  | PostCmd  -> ()
-  | WordList -> ()
+let lex_state        = ref PreCommand
+let compound_started = ref false
 
 let print_lexstate unit =
   print_endline ("*DBG* LEX STATE = " ^ (string_of_lexstate !lex_state))
@@ -48,7 +41,13 @@ let note_newlines str lexbuf =
   done ;
   ()
 
-let assign_regexp = Str.regexp "\\([a-zA-Z0-9_]+\\)="
+(* Use this to tokenize a word (string literal) and adjust our state. *)
+let tokenize_word str lbuf =
+  match !lex_state with
+    PreCommand  -> lex_state := Command ; WORD(lex_linenum lbuf, str)
+  | AssignVal   -> lex_state := PreCommand ; ASSIGNWORD(str)
+  | CompoundVal -> ASSIGNWORD(str)
+  | Command     -> WORD(lex_linenum lbuf, str)
 
 (* Reserved words must be at the beginning of a command. *)
 let reserved_words = [ ("for", FOR); ("done", DONE) ]
@@ -64,7 +63,7 @@ let token_push tok =
       (SEMI, _) | (ENDL, _) -> ()
     (* Make matching a wordlist the same as matching a word.
        We will have to catch any problems in the grammar. *)
-    | (STR(_,_), STR(_,_)) -> last_tokens.(last) <- tok
+    | (WORD(_,_), WORD(_,_)) -> last_tokens.(last) <- tok
     | _ ->
         Array.blit last_tokens 1 last_tokens 0 (max_queue_size - 1) ;
         last_tokens.(last) <- tok ;
@@ -77,44 +76,43 @@ let token_push tok =
 
 exception Cmd_context
 
+(* If a given word matches a reserved word then return its token. *)
 let reserved_word_token word =
   List.assoc word reserved_words
 
-(* Similar to the function at 2665 of bash's parse.y *)
+(* Similar to the function at line 2665 of bash's parse.y *)
 let special_case_token word =
   match (word, last_tokens)  with
-    ("in", [| _; _; _; FOR; STR(_,_) |]) -> IN
-  | ("do", [| _; FOR; STR(_,_); IN; STR(_,_) |]) ->
-      lex_state := PreCmd ; DO
+    ("in", [| _; _; _; FOR; WORD(_,_) |]) -> IN
+  | ("do", [| _; FOR; WORD(_,_); IN; WORD(_,_) |]) ->
+      lex_state := PreCommand ; DO
   | _ -> raise Not_found
 
-(* Parse tokens that cannot come after a command. *)
-let command_start_token lexbuf word =
-  try reserved_word_token word
-  with Not_found ->
-    if Str.string_match assign_regexp word 0
-    then
-      let valstart = (Str.group_end 1) + 1 in
-      let newval =
-        try String.sub word valstart ((String.length word) - valstart)
-        with Invalid_argument(_) -> ""  in
-      ASSIGN(lex_linenum lexbuf,
-             Str.matched_group 1 word,
-             newval)
-    else raise Cmd_context
+let match_assignment word =
+  let len = String.length word in
+  if len < 2 then false
+  else word.[len-1] == '='
 
+(* Returns a token which depends on several kinds of context. *)
 let context_token lexbuf word =
-  (* dump_history () ; *)
-  (* These tokens can even come after what appear to be commands. *)
-  try special_case_token word
-  with Not_found ->
-    try
-      if !lex_state == PreCmd && !compound_count == 0
-      then command_start_token lexbuf word
-      else raise Cmd_context
-    (* This word is a command/argument reserved words are disabled. *)
-    with Cmd_context -> state_record_word () ;
-      STR(lex_linenum lexbuf, word)
+  let linenum = lex_linenum lexbuf in
+  try
+    match !lex_state with
+    (* Assignments or reserved words come before commands. *)
+      PreCommand ->
+      (* TODO: find a way not to match the '=' char twice
+         (we do this in lexword too) *)
+        if match_assignment word then begin
+          let name = String.sub word 0 ((String.length word) - 1) in
+          lex_state := AssignVal ;
+          ASSIGN(linenum, name)
+        end
+        else reserved_word_token word
+    (* tokenize_word takes care of state and token type for us *)
+    | AssignVal | CompoundVal -> raise Not_found
+    (* Special tokens can even come after what appear to be commands. *)
+    | Command -> special_case_token word
+  with Not_found -> tokenize_word word lexbuf
 }
 
 let word = [ '0'-'9' 'a'-'z' 'A'-'Z' '_' '-' ] +
@@ -126,46 +124,45 @@ rule pkgbuildlex = parse
     { (* TODO: record comments using Pbcollect? *)
       pkgbuildlex lexbuf }
 | [ ' ' '\t' ] + { pkgbuildlex lexbuf }
-| '\n' { Lexing.new_line lexbuf ; lex_state := PreCmd ; ENDL }
+| '\n' { Lexing.new_line lexbuf ; lex_state := PreCommand ; ENDL }
 | '\'' {
   (* A singlequote... it may have a word directly behind it! *)
   (* This can also start a command string, since commands can be quoted. *)
-  state_record_word () ;
   let qc = single_quoted lexbuf in
   let trail = lexword lexbuf    in
-  STR(lex_linenum lexbuf, "'" ^ qc ^ "'" ^ trail)
+  tokenize_word ("'" ^ qc ^ "'" ^ trail) lexbuf 
 }
 | '"' {
-  state_record_word () ;
   let qc = double_quoted lexbuf in
   let trail = lexword lexbuf    in
-  STR(lex_linenum lexbuf, "\"" ^ qc ^ "\"" ^ trail)
+  tokenize_word ("\"" ^ qc ^ "\"" ^ trail) lexbuf 
 }
 (* When unquoted these usually have special meaning *)
-| ';' { lex_state := PreCmd ; SEMI }
+| ';' { lex_state := PreCommand ; SEMI }
 | '<' { LARROW }
 | '>' { RARROW }
 | '{' ( [ ' ' '\t' '\n' ]+ as ws ) {
   note_newlines ws lexbuf ;
   (* Subshell lists must be at the beginning of the command line *)
-  if !lex_state == PreCmd then LCURLY
+  if !lex_state == PreCommand then LCURLY
   else
-    (* Since function defs follow a string we will be in PostCmd state *)
+    (* Since function defs follow a string we will be in Command state *)
     match last_tokens with
-      [| _; _; STR(_,_); LPAREN; RPAREN |] -> LCURLY
-    | _ -> STR(lex_linenum lexbuf, "{")
+      [| _; _; WORD(_,_); LPAREN; RPAREN |] -> LCURLY
+    | _ -> WORD(lex_linenum lexbuf, "{")
   (* TODO: Arithmetic for loops? *)
 }
 (* Should we count open curly brackets? *)
 | '}' {
-  if !lex_state == PreCmd then (RCURLY (lex_linenum lexbuf))
-  else STR(lex_linenum lexbuf, "}")
+  if !lex_state == PreCommand then (RCURLY (lex_linenum lexbuf))
+  else WORD(lex_linenum lexbuf, "}")
 }
 | '(' {
-  incr compound_count ; LPAREN
+  if !lex_state == AssignVal then lex_state := CompoundVal else () ;
+  LPAREN
 }
 | ')' {
-  begin if !compound_count > 0 then decr compound_count end ;
+  if !lex_state == CompoundVal then lex_state := PreCommand else () ;
   RPAREN
 }
 | eof { EOF }
@@ -175,12 +172,19 @@ rule pkgbuildlex = parse
 }
 
 and lexword = parse
-| ( [ ^ ';' '{' '}' '<' '>' '(' ')' '#' '\'' '"' ' ' '\t' '\n' ] * as word )
-  ( [ '\'' '"' ] ? as quote )
-    {
-  (* If a quoted string abuts a non-quoted string concat them *)
-  match (word, quote) with
-    ("", "") -> ""
+| ( [ ^ ';' '{' '}' '<' '>' '(' ')' '#' '\'' '"' ' ' '=' '\t' '\n' ] * as word )
+  ( [ '\'' '"' '=' ] ? as suffix )
+{
+  match (word, suffix) with
+  (* Check for an assignment. *)
+    (_, "=") -> 
+      if !lex_state == PreCommand then word ^ "="
+      else
+        (* Treat it just as a simple word. *)
+        word ^ "=" ^ (lexword lexbuf)
+
+  (* If a quoted string abuts a non-quoted string concat them. *)
+  | ("", "") -> ""
   | (_,  "") -> word
   | (_, "'") ->
       let qc = single_quoted lexbuf in
@@ -188,8 +192,8 @@ and lexword = parse
   | (_,"\"") ->
       let qc = double_quoted lexbuf in
       word ^ "\"" ^ qc ^ "\"" ^ (lexword lexbuf)
-  | (_, _)   -> failwith( "lexword match error: "
-                           ^ "word=" ^ word ^ "; quote=" ^ quote )
+  | (_, _)   -> failwith(sprintf "lexword match error: word=%s; quote=%s"
+                           word suffix)
 }
 
 and single_quoted = parse
@@ -211,28 +215,10 @@ and double_quoted = parse
     { failwith (sprintf "Line %d: No closing double-quote (\") found.\n"
                   !quote_start) }
 
-(* and funcbody = parse *)
-(* | '{' *)
-(*     { incr func_quote_count; "{" ^ (funcbody lexbuf) } *)
-(* | '}' *)
-(*     { decr func_quote_count; *)
-(*       if !func_quote_count == 0 then *)
-(*         "}" *)
-(*       else if !func_quote_count < 0 then *)
-(*         failwith "Invalid function definition: unbalanced brackets" *)
-(*       else *)
-(*         "}" ^ (funcbody lexbuf) *)
-(*     } *)
-(* | '\n' *)
-(*     { Lexing.new_line lexbuf; "\n" ^ (funcbody lexbuf) }  *)
-(* | _ as ch *)
-(*     { (String.make 1 ch) ^ (funcbody lexbuf) } *)
-
-(* { (\* empty *\) } *)
-
 {
-  (* Wrap the ocamlyacc generated function in order to keep track of
-     the last few tokens. *)
+
+(* Wrap the ocamlyacc generated function in order to keep track of
+   the last few tokens. *)
 let pblex lexbuffer =
   token_push (pkgbuildlex lexbuffer)
 } 

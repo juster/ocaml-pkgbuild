@@ -1,5 +1,21 @@
 open Printf
 open Pbparsel
+open Pbparsey
+
+let string_of_token = function
+  | ASSIGN(line,name) -> sprintf "ASSIGN(%d, %s)" line name
+  | WORD(line,str) -> sprintf "WORD(%d, %s)" line str
+  | ASSIGNWORD(str) -> sprintf "ASSIGNWORD(%s)" str
+  | LPAREN -> "LPAREN"
+  | RPAREN -> "RPAREN"
+  | LARROW -> "LARROW"
+  | RARROW -> "RARROW"
+  | LCURLY -> "LCURLY"
+  | RCURLY(line) -> "RCURLY"
+  | SEMI   -> "SEMI"
+  | ENDL   -> "ENDL"
+  | EOF    -> "EOF"
+  | _ -> failwith("Unmatched token")
 
 let print_token tok =
   print_endline (string_of_token tok)

@@ -4,29 +4,31 @@ open Pbcollect
 
 open Printf
 
+let words wl = String.concat " " wl
+
+let rec string_of_pbrec = function (line, data) ->
+  sprintf "%d: %s" line (string_of_pbdata data)
+
+and string_of_pbdata = function
+    Assignment(n,v,x) ->
+      sprintf "VAR %s := %s (%s)" n (words v) (words x)
+  | Command(s,x) ->
+      "CMD " ^ (if s <> x then s ^ " (" ^ x ^ ")" else s)
+  | Function(name,cmds) -> sprintf "FUN %s\n%s" name
+        (String.concat "\n"
+           ([ "{{{" ] @ (List.map string_of_pbrec cmds) @ [ "}}}" ]))
+  | SyntaxError -> "SYNTAX ERROR!"
+
 let _ =
   try
+    Pbparams.assign_string "srcdir" "/srcdir" ;
+    Pbparams.assign_string "pkgdir" "/pkgdir" ;
 (*     ignore (Parsing.set_trace true) ; *)
     pbparse_channel (open_in "PKGBUILD") ;
 (*     ignore (Parsing.set_trace false) ; *)
-    List.iter begin fun pair -> match pair with (n,v) ->
-      printf "%s=%s\n" n (string_of_param v)
-    end (Pbparams.list ()) ;
+    List.iter print_endline
+      (List.map string_of_pbrec (Pbcollect.results ()))
 
-    print_endline "" ;
-
-    List.iter begin fun x -> match x with (line, data) ->
-      printf "%d: %s\n" line
-        begin match data with
-          Assignment(n,v,x) -> n ^ " := " ^ v ^ " (" ^ x ^ ")"
-        | Command(s,x) ->
-            "CMD: " ^ (if s <> x then s ^ " (" ^ x ^ ")" else s)
-        | Function(name,cmds) -> sprintf "FUNCTION %s (%d commands)"
-              name (List.length cmds)
-        | SyntaxError -> "SYNTAX ERROR!"
-        end
-    end (Pbcollect.results ()) ;
-      
   with ex -> ignore (Parsing.set_trace false) ; raise ex
       
       

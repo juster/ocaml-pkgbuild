@@ -15,12 +15,11 @@ let collect_error () =
 
 %}
 
-%token <int * string * string> ASSIGN
-%token <int * string> STR
+%token <int * string> ASSIGN WORD
+%token <string> ASSIGNWORD
 %token LPAREN RPAREN LARROW RARROW
 %token LCURLY RCURLY
 %token <int> RCURLY 
-%token <string> COMMENT
 %token FOR IN DO DONE
 %token SEMI ENDL EOF
 
@@ -75,18 +74,27 @@ simple_command:
 }
 
 simple_command_element:
-| STR    { $1 }
-| ASSIGN {
+| WORD    { $1 }
+| ASSIGN assignment_value {
   (* Remember that the lexer only puts ASSIGNs in front... *)
-  match $1 with (line, name, newval) ->
-    let x = Pbexpand.string newval in
-    Pbcollect.collect line (Assignment(name, newval, x)) ;
-    Pbparams.assign_string name x ;
+  match ($1, $2) with ((line, name), raw) ->
+    let x = Pbexpand.list raw in
+    Pbcollect.collect line (Assignment(name, raw, x)) ;
+    Pbparams.assign_array name x ;
     (line, "")
 }
 
+assignment_value:
+| { [ "" ] }
+| ASSIGNWORD { [ $1 ] }
+| LPAREN compound_assignment RPAREN { $2 }
+
+compound_assignment:
+| { [] }
+| ASSIGNWORD compound_assignment { $1 :: $2 }
+
 function_def:
-| STR LPAREN RPAREN newline_list function_body {
+| WORD LPAREN RPAREN newline_list function_body {
   (* The function data type contains a list of commands inside it. *)
   match $1, $5 with ((begl, name), cmds) -> (begl, name, cmds)
 }
