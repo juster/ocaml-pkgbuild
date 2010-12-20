@@ -16,14 +16,13 @@ let _ =
     print_endline "" ;
 
     List.iter begin fun x -> match x with (line, data) ->
-      printf "line %d: %s\n" line
+      printf "%d: %s\n" line
         begin match data with
           Assignment(n,v,x) -> n ^ " := " ^ v ^ " (" ^ x ^ ")"
         | Command(s,x) ->
             "CMD: " ^ (if s <> x then s ^ " (" ^ x ^ ")" else s)
-
-        | Function(endl,n) -> sprintf "FUNCDEF: %s (ends at line %d)"
-              n endl
+        | Function(name,cmds) -> sprintf "FUNCTION %s (%d commands)"
+              name (List.length cmds)
         end
     end (Pbcollect.results ()) ;
       

@@ -27,36 +27,39 @@ let parse_error msg =
 %%
 
 pbparse:
-| simple_list pbparse { () }
+| simple_list pbparse {
+  List.iter (function (line, cmd) -> Pbcollect.collect line cmd) $1 ; ()
+}
 | ENDL pbparse { () }
 | error ENDL {}
 | EOF { () }
 
 simple_list:
-| simple_list1 { (* May or may not end in semi-colon. *) }
-| simple_list1 SEMI {}
+| simple_list1 { $1 (* May or may not end in semi-colon. *) }
+| simple_list1 SEMI { $1 }
 
 simple_list1:
-| simple_list1 SEMI simple_list1 { () }
-| command { (* TODO: pipeline_command *) }
+| simple_list1 SEMI simple_list1 { $1 @ $3 }
+| command { $1 }
 
 command:
 | simple_command {
-  match $1 with
-  | (_,"") -> ()
-  | (n, v) -> let x = Pbexpand.expand_string v in
-    Pbcollect.collect n (Command (v, x))
+  (* Must create lists of one element to match shell_command which
+     could be a list of commands (via group_command) *)
+   match $1 with (_,"") -> []
+   | (n, v) -> let x = Pbexpand.expand_string v in [ (n, Command (v, x)) ]
 }
 | function_def {
   (* Don't expand function names. *)
-  match $1 with (begl, endl, v) ->
-    Pbcollect.collect begl (Function (endl, v))
+  match $1 with (begl, name, cmds) ->
+    [ (begl, Function (name, cmds)) ]
 }
-| shell_command {}
+| shell_command { $1 }
 
 simple_command:
 | simple_command_element { $1 }
 | simple_command simple_command_element {
+  (* We concatenate command words into one "word". *)
   match ($1, $2) with
     (* Empty strings are assignments, not commands. Ignore them. *)
     ((n,""), (_,"")) -> (n, "")
@@ -78,7 +81,8 @@ simple_command_element:
 
 function_def:
 | STR LPAREN RPAREN newline_list function_body {
-  match $1, $5 with ((bl,v),el) -> (bl, el, v)
+  (* The function data type contains a list of commands inside it. *)
+  match $1, $5 with ((begl, name), cmds) -> (begl, name, cmds)
 }
 
 newline_list:
@@ -91,19 +95,19 @@ shell_command:
 | group_command { $1 (* TODO: if_command *) }
 
 group_command:
-| LCURLY compound_list RCURLY { $3 }
+| LCURLY compound_list RCURLY { $2 }
 
 compound_list:
-| list {} | newline_list list1 {}
+| list { $1 } | newline_list list1 { $2 }
 
 list:
-| newline_list {} | list0 {}
+| newline_list { [] } | list0 { $1 }
 
 list0:
-| list1 ENDL newline_list {}
-| list1 SEMI newline_list {}
+| list1 ENDL newline_list { $1 }
+| list1 SEMI newline_list { $1 }
 
 list1:
-| list1 ENDL newline_list list1 {}
-| list1 SEMI newline_list list1 {}
-| command {}
+| list1 ENDL newline_list list1 { $1 @ $4 }
+| list1 SEMI newline_list list1 { $1 @ $4 }
+| command { (* command already returns a list of one element *) $1 }
