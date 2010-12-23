@@ -1,17 +1,54 @@
 %{
 
-open Pbcollect
 open Pbexpand
 open Pbparams
+open Pbwarn
 
 open Lexing
 open Printf
 
-let parse_error msg = ()
+(* let parse_error msg = () *)
 
-let collect_error () =
-  let pos = Parsing.symbol_start_pos () in
-  Pbcollect.collect pos.pos_lnum SyntaxError
+(* let collect_error () = *)
+(*   let pos = Parsing.symbol_start_pos () in *)
+(*   Pbcollect.collect pos.pos_lnum SyntaxError *)
+
+let warn_level  = ref Pbwarn.Style
+let level_check = Pbwarn.is_level_active !warn_level
+
+let style = Pbwarn.style level_check
+let bad   = Pbwarn.bad level_check
+let omg   = Pbwarn.horrible level_check
+
+let functions_defined = ref []
+
+let check_toplevel cmds =
+  List.iter begin function
+      (line, []) -> () ;
+    | (line, cmd) ->
+        omg line ("Top-level command: "
+                  ^ (String.concat " " cmd) ^ "\n")
+  end cmds
+
+let kill_options cmdargs =
+  List.filter begin fun str ->
+    match str.[0] with '-' -> false | _ -> true
+  end cmdargs
+
+let invalid_paths cmdargs =
+  List.filter begin fun str ->
+    not (Str.string_match (Str.regexp "SRCDIR|PKGDIR") str 0)
+  end cmdargs
+
+let check_function name cmds =
+  functions_defined := name :: !functions_defined ;
+  List.iter begin function
+      (line, "rm"::tl) ->
+        if List.length (invalid_paths (kill_options tl)) > 0 then
+          omg line (name ^ "():Malicious 'rm' command: "
+                    ^ (String.concat "\n" ("rm"::tl)) ^ "\n")
+    | _ -> ()
+  end cmds
 
 %}
 
@@ -21,9 +58,10 @@ let collect_error () =
 %token LCURLY RCURLY
 %token <int> RCURLY 
 %token FOR IN DO DONE
+%token AND AND_AND OR_OR
 %token SEMI ENDL EOF
 
-%left SEMI ENDL EOF
+%left AND OR_OR AND_AND SEMI ENDL EOF
 
 %start pbparse
 %type <unit> pbparse
@@ -32,10 +70,13 @@ let collect_error () =
 
 pbparse:
 | simple_list pbparse {
-  List.iter (function (line, cmd) -> Pbcollect.collect line cmd) $1 ; ()
+  check_toplevel $1 ;
 }
 | ENDL pbparse { () }
-| error ENDL { collect_error () }
+| error ENDL {
+  let pos = Parsing.symbol_start_pos () in
+  omg pos.pos_lnum "Syntax error\n"
+}
 | EOF { () }
 
 simple_list:
@@ -43,43 +84,42 @@ simple_list:
 | simple_list1 SEMI { $1 }
 
 simple_list1:
-| simple_list1 SEMI simple_list1 { $1 @ $3 }
+| simple_list1 SEMI  simple_list1 { $1 @ $3 }
+| simple_list1 AND   simple_list1 { $1 @ $3 }
+| simple_list1 OR_OR newline_list simple_list1 {
+  begin
+    match $4 with
+      (line, ["return"; "1"]) :: _ ->
+        style line ("'|| return 1' is no longer required, "
+                    ^ "makepkg notices errors")
+    | _ -> ()
+  end ; $1 @ $4
+}
 | command { $1 }
 
 command:
-| simple_command {
-  (* Must create lists of one element to match shell_command which
-     could be a list of commands (via group_command) *)
-   match $1 with
-     (_,"") -> [] (* Ignore commands that are only assignments. *)
-   | (n, v) -> let x = Pbexpand.string v in [ (n, Command (v, x)) ]
-}
-| function_def {
-  (* Don't expand function names. *)
-  match $1 with (begl, name, cmds) ->
-    [ (begl, Function (name, cmds)) ]
-}
-| shell_command { $1 }
+| simple_command { [ $1 ] }
+| function_def   { []     }
+| shell_command  { $1     }
 
 simple_command:
-| simple_command_element { $1 }
-| simple_command simple_command_element {
-  (* We concatenate command words into one "word". *)
+| simple_command_element {
+  match $1 with
+    (line,  "") -> (line, []) (* Ignore assignments. *)
+  | (line, arg) -> (line, [arg])
+}
+| simple_command_element simple_command  {
   match ($1, $2) with
-    (* Empty strings are assignments, not commands. Ignore them. *)
-    ((n,""), (_,"")) -> (n, "")
-  | ((n,""), (_, s)) -> (n, s)
-  | ((n, s), (_,"")) -> (n, s)
-  | ((n, l), (_, r)) -> (n, l ^ " " ^ r)
+    ((line,  ""), (_, strs)) -> (line, strs)
+  | ((line, cmd), (_, args)) -> (line, cmd :: args)
 }
 
 simple_command_element:
-| WORD    { $1 }
+| WORD { $1 }
 | ASSIGN assignment_value {
-  (* Remember that the lexer only puts ASSIGNs in front... *)
+  (* Must have the same return value as the WORD rule above. *)
   match ($1, $2) with ((line, name), raw) ->
     let x = Pbexpand.list raw in
-    Pbcollect.collect line (Assignment(name, raw, x)) ;
     Pbparams.assign_array name x ;
     (line, "")
 }
@@ -95,8 +135,14 @@ compound_assignment:
 
 function_def:
 | WORD LPAREN RPAREN newline_list function_body {
-  (* The function data type contains a list of commands inside it. *)
-  match $1, $5 with ((begl, name), cmds) -> (begl, name, cmds)
+  printf "*DBG* function definition\n" ;
+  begin match $1 with
+    (_, "build") | (_, "package") -> ();
+  | (n, _) ->
+      style n "A function is defined that is not 'build' or 'package'.\n"
+  end ;
+  eprintf "*DBG* command count = %d\n" (List.length $5) ;
+  check_function (snd $1) $5
 }
 
 newline_list:
@@ -124,4 +170,13 @@ list0:
 list1:
 | list1 ENDL newline_list list1 { $1 @ $4 }
 | list1 SEMI newline_list list1 { $1 @ $4 }
+| list1 OR_OR newline_list list1 {
+  begin
+    match $4 with
+      (line, ["return"; "1"]) :: _ ->
+        style line ("'|| return 1' is no longer required, "
+                    ^ "makepkg notices errors\n")
+    | _ -> ()
+  end ; $1 @ $4
+}
 | command { (* command already returns a list of one element *) $1 }

@@ -115,7 +115,8 @@ let context_token lexbuf word =
   with Not_found -> tokenize_word word lexbuf
 }
 
-let word = [ '0'-'9' 'a'-'z' 'A'-'Z' '_' '-' ] +
+let word_re = [ ^ ';' '{' '}' '<' '>' '(' ')' '#' '\'' '"' ' ' '=' '&' '|'
+                  '\t' '\n' ] *
 
 (* Try to parse as many special characters as possible using
    ocamllex's rules. *)
@@ -165,15 +166,17 @@ rule pkgbuildlex = parse
   if !lex_state == CompoundVal then lex_state := PreCommand else () ;
   RPAREN
 }
-| eof { EOF }
+| '&'  { AND }
+| "&&" { AND_AND }
+| "||" { OR_OR }
+| eof  { EOF }
 | _ as ch {
   let word = (String.make 1 ch) ^ (lexword lexbuf) in
   context_token lexbuf word
 }
 
 and lexword = parse
-| ( [ ^ ';' '{' '}' '<' '>' '(' ')' '#' '\'' '"' ' ' '=' '\t' '\n' ] * as word )
-  ( [ '\'' '"' '=' ] ? as suffix )
+| ( word_re as word ) ( [ '\'' '"' '=' ] ? as suffix )
 {
   match (word, suffix) with
   (* Check for an assignment. *)

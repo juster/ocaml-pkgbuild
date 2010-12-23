@@ -15,7 +15,13 @@ let string_of_token = function
   | SEMI   -> "SEMI"
   | ENDL   -> "ENDL"
   | EOF    -> "EOF"
-  | _ -> failwith("Unmatched token")
+  | FOR    -> "FOR"
+  | IN     -> "IN"
+  | DO     -> "DO"
+  | DONE   -> "DONE"
+  | AND    -> "AND"
+  | AND_AND -> "AND_AND"
+  | OR_OR   -> "OR_OR"
 
 let print_token tok =
   print_endline (string_of_token tok)
