@@ -1,7 +1,8 @@
 type pbdata =
     Assignment of (string * string list * string list)
-  | Command of (string * string)
-  | Function of (string * (int * pbdata) list)
+  | Command    of (string * string)
+  | Async      of (cmd)
+  | Function   of (string * (int * pbdata) list)
   | SyntaxError
 
 module Pbcollect :
